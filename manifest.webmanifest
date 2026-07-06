@@ -1,0 +1,32 @@
+{
+  "name": "Museum Botellitas Rosario",
+  "short_name": "Botellitas",
+  "description": "Catálogo digital de la colección de minibotellas del Museum Botellitas Rosario",
+  "lang": "es-AR",
+  "start_url": "./museo.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#221712",
+  "theme_color": "#221712",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
