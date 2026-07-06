@@ -3,7 +3,7 @@
   "short_name": "Botellitas",
   "description": "Catálogo digital de la colección de minibotellas del Museum Botellitas Rosario",
   "lang": "es-AR",
-  "start_url": "./museo.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",

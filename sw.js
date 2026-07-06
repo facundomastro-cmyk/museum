@@ -1,13 +1,13 @@
 // Service worker del Museum Botellitas Rosario
 // Estrategia: red primero para la página (así las actualizaciones llegan solas),
 // caché primero para íconos y archivos fijos. Sin internet, sirve la última versión guardada.
-const CACHE = "mbr-v2";
-const APP = "./museo.html";
+const CACHE = "mbr-v3";
+const APP = "./index.html";
 
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => c.addAll([APP, "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png"]))
+      .then(c => c.addAll([APP, "./", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png"]))
       .then(() => self.skipWaiting())
   );
 });
