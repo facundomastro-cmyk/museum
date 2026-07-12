@@ -361,6 +361,15 @@ footer{padding:22px;text-align:center;font-size:12px;color:var(--crema2);border-
 
 <div class="aviso" id="aviso"></div>
 
+<!-- Visor de foto a pantalla completa (pellizcá para hacer zoom) -->
+<div class="velo" id="velo-visor" style="padding:0;background:rgba(10,6,3,.96)">
+  <button class="cerrar" onclick="cerrar('velo-visor')" aria-label="Cerrar"
+    style="position:fixed;top:14px;right:14px;color:#f4ecdc;font-size:34px;z-index:60">×</button>
+  <div id="visor-cuerpo" style="width:100%;min-height:100vh;display:flex;align-items:center;justify-content:center;overflow:auto">
+    <img id="visor-img" src="" alt="" style="width:100%;height:auto;display:block">
+  </div>
+</div>
+
 <!-- Pantalla de clave (primera vez en cada dispositivo) -->
 <div class="velo" id="velo-clave">
   <div class="modal" style="max-width:380px;text-align:center">
@@ -513,8 +522,13 @@ function listaFotos(b){
   if(Array.isArray(b.fotos) && b.fotos.length) return b.fotos;
   return b.fotoData ? [b.fotoData] : [];
 }
+function listaMinis(b){
+  const fulls = listaFotos(b);
+  if(Array.isArray(b.fotosMin) && b.fotosMin.length===fulls.length) return b.fotosMin;
+  return fulls;
+}
 function fotoPrincipal(b){
-  const f = listaFotos(b);
+  const f = listaMinis(b);
   return f[0] || svgMini(b.tipo, b.marca);
 }
 
@@ -561,6 +575,20 @@ async function iniciar(){
       }
     }
     localStorage.setItem("museo-datos-v6","1");
+    coleccion = await dbTodas();
+  }
+  // v7: fotos en dos calidades (genera miniaturas de las fotos ya cargadas)
+  if(!localStorage.getItem("museo-datos-v7")){
+    for(const b of coleccion){
+      const fulls = listaFotos(b);
+      if(fulls.length && !(Array.isArray(b.fotosMin)&&b.fotosMin.length===fulls.length)){
+        b.fotos = fulls; delete b.fotoData;
+        b.fotosMin = [];
+        for(const f of fulls) b.fotosMin.push(await achicarDataURL(f));
+        await dbGuardar(b);
+      }
+    }
+    localStorage.setItem("museo-datos-v7","1");
     coleccion = await dbTodas();
   }
   if(sessionStorage.getItem("museo-gestion")==="1") document.body.classList.add("gestion");
@@ -714,7 +742,7 @@ function renderFotosForm(){
   fotosTemp.forEach((f,i)=>{
     const tile = document.createElement("div");
     tile.className = "foto-tile";
-    const img = document.createElement("img"); img.src = f;
+    const img = document.createElement("img"); img.src = f.mini;
     const bx = document.createElement("button"); bx.type="button"; bx.className="foto-x"; bx.textContent="×";
     bx.setAttribute("aria-label","Quitar esta foto");
     bx.onclick = ()=>{fotosTemp.splice(i,1); renderFotosForm()};
@@ -738,7 +766,9 @@ function abrirAlta(){
 function editarActual(){
   const b = coleccion.find(x=>x.id===detalleId);
   if(!b) return;
-  editandoId = b.id; fotosTemp = [...listaFotos(b)];
+  editandoId = b.id;
+  const fulls = listaFotos(b), minis = listaMinis(b);
+  fotosTemp = fulls.map((f,i)=>({full:f, mini:minis[i]||f}));
   document.getElementById("form-titulo").textContent = "Editar: "+b.marca;
   for(const c of CAMPOS_FORM) document.getElementById("c-"+c).value = b[c]??"";
   document.getElementById("extras-lista").innerHTML = "";
@@ -755,7 +785,8 @@ async function guardarFicha(){
   ficha.ediciones = parseInt(ficha.ediciones)||1;
   ficha.graduacion = ficha.graduacion==="" ? "" : parseFloat(ficha.graduacion);
   ficha.extras = leerExtras();
-  ficha.fotos = fotosTemp;
+  ficha.fotos = fotosTemp.map(f=>f.full);
+  ficha.fotosMin = fotosTemp.map(f=>f.mini);
   if(editandoId){
     const previa = coleccion.find(x=>x.id===editandoId);
     ficha.id = editandoId; ficha.creada = previa?.creada || Date.now();
@@ -778,22 +809,34 @@ async function borrarActual(){
   aviso("Pieza eliminada.");
 }
 
-/* Compresión de foto en el navegador */
-function comprimirImagen(archivo){
+/* Compresión de foto en dos calidades: grande (detalle/zoom) y miniatura (galería) */
+function renderCanvas(img, MAX, calidad){
+  let {width:w,height:h} = img;
+  if(w>h && w>MAX){h=h*MAX/w; w=MAX} else if(h>=w && h>MAX){w=w*MAX/h; h=MAX}
+  const canvas = document.createElement("canvas");
+  canvas.width=w; canvas.height=h;
+  canvas.getContext("2d").drawImage(img,0,0,w,h);
+  return canvas.toDataURL("image/jpeg",calidad);
+}
+function procesarImagen(archivo){
   return new Promise(res=>{
     const img = new Image();
     img.onload = ()=>{
-      const MAX = 520;
-      let {width:w,height:h} = img;
-      if(w>h && w>MAX){h=h*MAX/w; w=MAX} else if(h>=w && h>MAX){w=w*MAX/h; h=MAX}
-      const canvas = document.createElement("canvas");
-      canvas.width=w; canvas.height=h;
-      canvas.getContext("2d").drawImage(img,0,0,w,h);
+      const full = renderCanvas(img, 1100, 0.78);
+      const mini = renderCanvas(img, 420, 0.7);
       URL.revokeObjectURL(img.src);
-      res(canvas.toDataURL("image/jpeg",0.72));
+      res({full, mini});
     };
     img.onerror = ()=>res(null);
     img.src = URL.createObjectURL(archivo);
+  });
+}
+function achicarDataURL(url){
+  return new Promise(res=>{
+    const img = new Image();
+    img.onload = ()=>res(renderCanvas(img, 420, 0.7));
+    img.onerror = ()=>res(url);
+    img.src = url;
   });
 }
 async function cargarFoto(e){
@@ -801,8 +844,8 @@ async function cargarFoto(e){
   e.target.value = "";
   if(!archivos.length) return;
   for(const a of archivos){
-    const dato = await comprimirImagen(a);
-    if(dato) fotosTemp.push(dato);
+    const par = await procesarImagen(a);
+    if(par) fotosTemp.push(par);
     else aviso("No se pudo leer una de las imágenes.");
   }
   renderFotosForm();
@@ -822,9 +865,11 @@ async function cargarFotosLote(e){
   for(const a of archivos){
     const b = porArchivo[claveArchivo(a.name)];
     if(!b){sinPareja.push(a.name);continue}
-    const dato = await comprimirImagen(a);
-    if(!dato){sinPareja.push(a.name);continue}
-    b.fotos = [...listaFotos(b), dato];
+    const par = await procesarImagen(a);
+    if(!par){sinPareja.push(a.name);continue}
+    const fulls = listaFotos(b), minis = listaMinis(b);
+    b.fotos = [...fulls, par.full];
+    b.fotosMin = [...minis, par.mini];
     delete b.fotoData;
     await dbGuardar(b);
     ok++;
@@ -846,14 +891,20 @@ function abrirDetalle(id){
   document.getElementById("det-nombre").textContent = b.marca;
   document.getElementById("det-variedad").textContent = b.variedad||"";
   const fotos = listaFotos(b);
+  const minis = listaMinis(b);
   const principal = fotos[0] || svgMini(b.tipo,b.marca);
-  document.getElementById("det-foto").innerHTML = `<img id="det-foto-img" src="${principal}" alt="">`;
+  document.getElementById("det-foto").innerHTML =
+    `<img id="det-foto-img" src="${principal}" alt="" ${fotos.length? 'title="Tocá para ampliar"':''}>`;
+  if(fotos.length){
+    document.getElementById("det-foto-img").style.cursor = "zoom-in";
+    document.getElementById("det-foto-img").onclick = ()=>abrirVisor(document.getElementById("det-foto-img").src);
+  }
   const thumbs = document.getElementById("det-thumbs");
   thumbs.innerHTML = "";
   if(fotos.length>1){
     fotos.forEach((f,i)=>{
       const t = document.createElement("img");
-      t.src = f;
+      t.src = minis[i]||f;
       t.className = i===0 ? "activa":"";
       t.onclick = ()=>{
         document.getElementById("det-foto-img").src = f;
@@ -1038,6 +1089,10 @@ function leerRespaldo(e){
 }
 
 /* ============ Utilidades ============ */
+function abrirVisor(src){
+  document.getElementById("visor-img").src = src;
+  abrir("velo-visor");
+}
 function abrir(id){document.getElementById(id).classList.add("abierto")}
 function cerrar(id){document.getElementById(id).classList.remove("abierto")}
 document.querySelectorAll(".velo").forEach(v=>{if(v.id!=="velo-clave")v.addEventListener("click",e=>{if(e.target===v)v.classList.remove("abierto")})});
